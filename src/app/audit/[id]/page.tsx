@@ -1,5 +1,5 @@
 // app/audit/[id]/page.tsx
-import { getAuditById } from "@/app/actions";
+import { getAuditById } from "@/lib/data"; // THE KEY FIX IS THIS IMPORT
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";

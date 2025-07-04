@@ -5,87 +5,144 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import * as cheerio from "cheerio";
-// We remove the static imports for lighthouse and chrome-launcher here
 
-// Input validation schema
+// --- Type Definitions ---
 const urlSchema = z.string().url({ message: "Please enter a valid URL." });
+type FormFactor = "mobile" | "desktop";
+export type ActionState = { error?: string; id?: string; } | null;
 
-// Define a type for the state passed to the action
-type ActionState = {
-  error?: string;
-} | null;
+// --- Helper Functions ---
 
-export type AuditResult = {
-  id: string;
-};
+async function checkLink(url: string, base: string) {
+    let absoluteUrl: URL;
+    try {
+        absoluteUrl = new URL(url, base);
+    } catch (e) {
+        return { status: 'INVALID_URL' };
+    }
+    if (absoluteUrl.protocol !== 'http:' && absoluteUrl.protocol !== 'https:') {
+        return { status: 'SKIPPED_PROTOCOL' };
+    }
+    try {
+        const response = await fetch(absoluteUrl.href, {
+            method: 'HEAD',
+            signal: AbortSignal.timeout(5000),
+            redirect: 'follow',
+        });
+        return { status: response.status };
+    } catch (error: any) {
+        if (error.name === 'TimeoutError') return { status: 408 };
+        return { status: 500 };
+    }
+}
 
-// This is the main function that performs the audit
-// FIX: Replaced 'any' with the specific 'ActionState' type
-export async function startAudit(
-  prevState: ActionState,
-  formData: FormData
-): Promise<AuditResult | { error: string }> {
+async function runLighthouseAudit(url: string, formFactor: FormFactor) {
+    let chrome;
+    try {
+        const lighthouse = (await import("lighthouse")).default;
+        const { launch } = await import("chrome-launcher");
+        const chromeFlags = ['--headless', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'];
+        chrome = await launch({ chromeFlags });
+        const options = {
+            logLevel: 'info' as const,
+            output: 'json' as const,
+            onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+            port: chrome.port,
+            formFactor: formFactor,
+            screenEmulation: {
+                mobile: formFactor === 'mobile',
+                width: formFactor === 'mobile' ? 360 : 1920,
+                height: formFactor === 'mobile' ? 640 : 1080,
+                deviceScaleFactor: formFactor === 'mobile' ? 2 : 1,
+                disabled: formFactor === 'desktop',
+            },
+        };
+        const runnerResult = await lighthouse(url, options);
+        if (!runnerResult) throw new Error("Lighthouse returned no result.");
+        const report = runnerResult.lhr;
+        return {
+            formFactor: formFactor.toUpperCase(),
+            performanceScore: Math.round((report.categories.performance.score || 0) * 100),
+            accessibilityScore: Math.round((report.categories.accessibility.score || 0) * 100),
+            bestPracticesScore: Math.round((report.categories['best-practices'].score || 0) * 100),
+            seoScore: Math.round((report.categories.seo.score || 0) * 100),
+            firstContentfulPaint: report.audits['first-contentful-paint'].displayValue,
+            largestContentfulPaint: report.audits['largest-contentful-paint'].displayValue,
+            cumulativeLayoutShift: report.audits['cumulative-layout-shift'].displayValue,
+        };
+    } finally {
+        if (chrome) await chrome.kill();
+    }
+}
+
+// --- The Main Server Action ---
+export async function startAudit(prevState: ActionState, formData: FormData) {
   const urlToAudit = formData.get("url") as string;
   const validatedFields = urlSchema.safeParse(urlToAudit);
 
   if (!validatedFields.success) {
-    return {
-      error: "Invalid URL provided. Please enter a full URL (e.g., https://example.com).",
-    };
+    return { error: "Invalid URL. Please enter a full URL (e.g., https://example.com)." };
   }
   const url = validatedFields.data;
 
-  let audit;
-  try {
-    audit = await prisma.audit.create({
-      data: { url, status: "RUNNING" },
-    });
-  } catch (dbError) {
-    console.error("Database error:", dbError);
-    return { error: "Failed to create audit record." };
-  }
+  const audit = await prisma.audit.create({
+    data: { url, status: "RUNNING" },
+  });
 
   try {
-    // Run audits...
-    const [htmlContent, lighthouseReport] = await Promise.all([
+    const [htmlContent, mobileResult, desktopResult] = await Promise.all([
       fetch(url).then(res => res.text()).catch(() => null),
-      runLighthouseAudit(url).catch((err) => {
-          console.error("Lighthouse failed:", err);
-          return null;
-      })
+      runLighthouseAudit(url, 'mobile'),
+      runLighthouseAudit(url, 'desktop')
     ]);
 
-    if (!htmlContent) {
-      await prisma.audit.update({ where: { id: audit.id }, data: { status: 'FAILED' } });
-      return { error: `Failed to fetch content from ${url}. The site may be down or blocking requests.` };
-    }
+    if (!htmlContent) throw new Error(`Failed to fetch content from ${url}.`);
+
+    await prisma.lighthouseReport.createMany({
+      data: [
+        { auditId: audit.id, ...mobileResult },
+        { auditId: audit.id, ...desktopResult }
+      ]
+    });
 
     const $ = cheerio.load(htmlContent);
-    // ... (rest of the cheerio logic is the same)
-    const title = $("title").text();
-    const description = $('meta[name="description"]').attr("content") || null;
-    const hasH1 = $("h1").length > 0;
-    
+
     await prisma.metaTagReport.create({
-        data: { auditId: audit.id, title, description, hasH1 }
+      data: {
+        auditId: audit.id,
+        title: $("title").text() || null,
+        description: $('meta[name="description"]').attr("content") || null,
+        hasH1: $("h1").length > 0,
+      },
     });
 
     const imageIssues = $('img').map((i, el) => {
-        const src = $(el).attr('src') || '';
-        const alt = $(el).attr('alt');
-        if (!alt) { return { src, alt: '', issue: 'MISSING_ALT' }; }
-        return null;
+      const src = $(el).attr('src') || '';
+      const alt = $(el).attr('alt');
+      return (!alt) ? { src, alt: '', issue: 'MISSING_ALT' } : null;
     }).get().filter(Boolean);
 
     if (imageIssues.length > 0) {
-        await prisma.imageIssue.createMany({
-            data: imageIssues.map(issue => ({ ...issue, auditId: audit.id }))
-        });
+      await prisma.imageIssue.createMany({ data: imageIssues.map(issue => ({ ...issue, auditId: audit.id }))});
     }
 
-    // Save Lighthouse Report
-    if (lighthouseReport) {
-        await prisma.lighthouseReport.create({ data: { auditId: audit.id, ...lighthouseReport }});
+    const linkPromises = $('a[href]').map((i, el) => {
+      const href = $(el).attr('href');
+      const text = $(el).text().trim();
+      return (href) ? { href, text } : null;
+    }).get().filter(Boolean);
+
+    const linkCheckResults = await Promise.allSettled(linkPromises.map(link => checkLink(link.href, url)));
+
+    const brokenLinks = linkCheckResults.map((result, i) => {
+      if (result.status === 'fulfilled' && result.value.status >= 400) {
+        return { auditId: audit.id, href: linkPromises[i].href, text: linkPromises[i].text, status: result.value.status, issue: 'BROKEN_LINK' };
+      }
+      return null;
+    }).filter(Boolean);
+
+    if (brokenLinks.length > 0) {
+      await prisma.linkIssue.createMany({ data: brokenLinks as any });
     }
 
     await prisma.audit.update({
@@ -94,68 +151,10 @@ export async function startAudit(
     });
 
   } catch (error) {
-    console.error("Audit failed:", error);
-    await prisma.audit.update({
-      where: { id: audit.id },
-      data: { status: "FAILED" },
-    });
-    return { error: "An unexpected error occurred during the audit." };
+    console.error("Audit failed with error:", error);
+    await prisma.audit.update({ where: { id: audit.id }, data: { status: "FAILED" } });
+    return { error: "The audit could not be completed. The target site may be blocking automated tools or is currently down." };
   }
 
   redirect(`/audit/${audit.id}`);
-}
-
-// This self-contained function now dynamically imports lighthouse
-async function runLighthouseAudit(url: string) {
-  // Dynamically import the libraries only when this function is called
-  const lighthouse = (await import("lighthouse")).default;
-  const { launch } = await import("chrome-launcher");
-
-  const chrome = await launch({ chromeFlags: ['--headless', '--no-sandbox'] });
-  const options = {
-      logLevel: 'info' as const,
-      output: 'json' as const,
-      onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
-      port: chrome.port,
-  };
-
-  const runnerResult = await lighthouse(url, options);
-  
-  if (!runnerResult) {
-      await chrome.kill();
-      throw new Error("Lighthouse runner failed to return a result.");
-  }
-
-  const report = runnerResult.lhr;
-  
-  await chrome.kill();
-
-  return {
-      performanceScore: Math.round((report.categories.performance.score || 0) * 100),
-      accessibilityScore: Math.round((report.categories.accessibility.score || 0) * 100),
-      bestPracticesScore: Math.round((report.categories['best-practices'].score || 0) * 100),
-      seoScore: Math.round((report.categories.seo.score || 0) * 100),
-      firstContentfulPaint: report.audits['first-contentful-paint'].displayValue,
-      largestContentfulPaint: report.audits['largest-contentful-paint'].displayValue,
-      cumulativeLayoutShift: report.audits['cumulative-layout-shift'].displayValue,
-  };
-}
-
-
-// --- Other actions remain the same ---
-
-export async function getAllAudits() {
-    return prisma.audit.findMany({ orderBy: { createdAt: 'desc' } });
-}
-
-export async function getAuditById(id: string) {
-    return prisma.audit.findUnique({
-        where: { id },
-        include: {
-            metaTagReport: true,
-            lighthouseReport: true,
-            imageIssues: true,
-            linkIssues: true,
-        },
-    });
 }
