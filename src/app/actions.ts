@@ -10,13 +10,19 @@ import * as cheerio from "cheerio";
 // Input validation schema
 const urlSchema = z.string().url({ message: "Please enter a valid URL." });
 
+// Define a type for the state passed to the action
+type ActionState = {
+  error?: string;
+} | null;
+
 export type AuditResult = {
   id: string;
 };
 
 // This is the main function that performs the audit
+// FIX: Replaced 'any' with the specific 'ActionState' type
 export async function startAudit(
-  prevState: any,
+  prevState: ActionState,
   formData: FormData
 ): Promise<AuditResult | { error: string }> {
   const urlToAudit = formData.get("url") as string;
