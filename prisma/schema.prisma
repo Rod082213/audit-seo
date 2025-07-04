@@ -1,0 +1,67 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Audit {
+  id        String   @id @default(cuid())
+  url       String
+  status    String   @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  metaTagReport     MetaTagReport?
+  lighthouseReport  LighthouseReport?
+  imageIssues       ImageIssue[]
+  linkIssues        LinkIssue[]
+}
+
+model MetaTagReport {
+  id          String  @id @default(cuid())
+  title       String?
+  description String?
+  hasH1       Boolean
+  auditId     String  @unique
+  audit       Audit   @relation(fields: [auditId], references: [id], onDelete: Cascade)
+}
+
+model LighthouseReport {
+  id                  String   @id @default(cuid())
+  performanceScore    Int
+  accessibilityScore  Int
+  bestPracticesScore  Int
+  seoScore            Int
+  firstContentfulPaint String
+  largestContentfulPaint String
+  cumulativeLayoutShift  String
+
+  auditId String @unique
+  audit   Audit  @relation(fields: [auditId], references: [id], onDelete: Cascade)
+}
+
+model ImageIssue {
+  id      String @id @default(cuid())
+  src     String
+  alt     String?
+  issue   String // e.g., "MISSING_ALT"
+  auditId String
+  audit   Audit  @relation(fields: [auditId], references: [id], onDelete: Cascade)
+}
+
+model LinkIssue {
+  id      String  @id @default(cuid())
+  href    String
+  text    String
+  status  Int? // e.g., 404, 200
+  issue   String? // e.g., "BROKEN_LINK"
+  auditId String
+  audit   Audit   @relation(fields: [auditId], references: [id], onDelete: Cascade)
+}
