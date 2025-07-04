@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import * as cheerio from "cheerio";
+import type { Prisma } from "@prisma/client";
 
 // --- Type Definitions ---
 const urlSchema = z.string().url({ message: "Please enter a valid URL." });
@@ -16,8 +17,9 @@ export type ActionState = { error?: string; id?: string; } | null;
 async function checkLink(url: string, base: string) {
     let absoluteUrl: URL;
     try {
+        // FIX 1: The 'e' variable is unused. Prefix with an underscore to tell the linter it's intentional.
         absoluteUrl = new URL(url, base);
-    } catch (e) {
+    } catch (_e) {
         return { status: 'INVALID_URL' };
     }
     if (absoluteUrl.protocol !== 'http:' && absoluteUrl.protocol !== 'https:') {
@@ -30,8 +32,11 @@ async function checkLink(url: string, base: string) {
             redirect: 'follow',
         });
         return { status: response.status };
-    } catch (error: any) {
-        if (error.name === 'TimeoutError') return { status: 408 };
+    } catch (error: unknown) { // FIX 2: Use 'unknown' instead of 'any' for type safety.
+        // Check if the error is an object with a 'name' property
+        if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'TimeoutError') {
+             return { status: 408 };
+        }
         return { status: 500 };
     }
 }
@@ -134,15 +139,22 @@ export async function startAudit(prevState: ActionState, formData: FormData) {
 
     const linkCheckResults = await Promise.allSettled(linkPromises.map(link => checkLink(link.href, url)));
 
-    const brokenLinks = linkCheckResults.map((result, i) => {
+    // FIX 3: Use .reduce() for a type-safe way to build the 'brokenLinks' array, removing the need for 'as any'.
+    const brokenLinks = linkCheckResults.reduce<Prisma.LinkIssueCreateManyInput[]>((acc, result, i) => {
       if (result.status === 'fulfilled' && result.value.status >= 400) {
-        return { auditId: audit.id, href: linkPromises[i].href, text: linkPromises[i].text, status: result.value.status, issue: 'BROKEN_LINK' };
+        acc.push({
+          auditId: audit.id,
+          href: linkPromises[i].href,
+          text: linkPromises[i].text,
+          status: result.value.status,
+          issue: 'BROKEN_LINK'
+        });
       }
-      return null;
-    }).filter(Boolean);
+      return acc;
+    }, []);
 
     if (brokenLinks.length > 0) {
-      await prisma.linkIssue.createMany({ data: brokenLinks as any });
+      await prisma.linkIssue.createMany({ data: brokenLinks });
     }
 
     await prisma.audit.update({
