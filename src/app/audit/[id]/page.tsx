@@ -57,20 +57,21 @@ const ScoreGauge = ({ score, title }: { score: number, title: string }) => {
 };
 
 // FIX: Define a clear type for the page props
-type Props = {
+type AuditResultPageProps = {
   params: { id: string };
 };
 
 // FIX: Apply the new Props type to the function signature
-export default async function AuditResultPage({ params }: Props) {
+export default async function AuditResultPage({ params }: AuditResultPageProps) {
   const audit = await getAuditById(params.id);
 
   if (!audit) {
     notFound();
   }
 
-  // NOTE: This destructuring assumes lighthouseReport is a single object.
-  // If you implemented the mobile/desktop tabs, you'll need to adjust this.
+  // NOTE: This destructuring will cause a new type error if you have already
+  // implemented the mobile/desktop tabs, as 'lighthouseReport' would be an array.
+  // The provided code assumes 'lighthouseReport' is a single object.
   const { metaTagReport, lighthouseReport, imageIssues, linkIssues } = audit;
 
   return (
@@ -102,29 +103,22 @@ export default async function AuditResultPage({ params }: Props) {
             </CardHeader>
             <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-8 py-4">
-                    {/* @ts-ignore */}
                     <ScoreGauge score={lighthouseReport.performanceScore} title="Performance" />
-                    {/* @ts-ignore */}
                     <ScoreGauge score={lighthouseReport.accessibilityScore} title="Accessibility" />
-                    {/* @ts-ignore */}
                     <ScoreGauge score={lighthouseReport.bestPracticesScore} title="Best Practices" />
-                    {/* @ts-ignore */}
                     <ScoreGauge score={lighthouseReport.seoScore} title="SEO" />
                 </div>
                 <Separator className="my-4" />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
                     <div>
-                        {/* @ts-ignore */}
                         <p className="font-bold text-lg">{lighthouseReport.firstContentfulPaint}</p>
                         <p className="text-sm text-muted-foreground">First Contentful Paint</p>
                     </div>
                     <div>
-                        {/* @ts-ignore */}
                         <p className="font-bold text-lg">{lighthouseReport.largestContentfulPaint}</p>
                         <p className="text-sm text-muted-foreground">Largest Contentful Paint</p>
                     </div>
                     <div>
-                        {/* @ts-ignore */}
                         <p className="font-bold text-lg">{lighthouseReport.cumulativeLayoutShift}</p>
                         <p className="text-sm text-muted-foreground">Cumulative Layout Shift</p>
                     </div>
