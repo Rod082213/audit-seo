@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { LighthouseReport } from "@prisma/client";
 
-// A component to render the score gauge
 const ScoreGauge = ({ score, title }: { score: number, title: string }) => {
   const getScoreColor = (s: number) => {
     if (s >= 90) return "text-green-500";
@@ -31,7 +30,6 @@ const ScoreGauge = ({ score, title }: { score: number, title: string }) => {
   );
 };
 
-// A component to render the content of a single Lighthouse report tab
 const LighthouseReportTab = ({ report }: { report: LighthouseReport }) => (
     <>
         <div className="grid grid-cols-2 gap-y-8 gap-x-4 py-4 sm:grid-cols-4">
@@ -69,7 +67,6 @@ export default async function AuditResultPage({ params }: { params: { id: string
       </div>
 
       <div className="grid gap-8">
-        {/* Lighthouse Scores using Tabs */}
         {(mobileReport && desktopReport) ? (
             <Card>
                 <CardHeader>
@@ -88,10 +85,8 @@ export default async function AuditResultPage({ params }: { params: { id: string
                 </CardContent>
             </Card>
         ) : (
-          <Card><CardHeader><CardTitle>Lighthouse Report Pending</CardTitle><CardContent>The report is generating or failed.</CardContent></CardHeader></Card>
+          <Card><CardHeader><CardTitle>Lighthouse Report Pending</CardTitle><CardContent><p>The report is generating, failed, or data is missing.</p></CardContent></CardHeader></Card>
         )}
-
-        {/* Meta Tag Report */}
         {metaTagReport && (
           <Card>
             <CardHeader><CardTitle className="text-xl">Meta Tag Analysis</CardTitle></CardHeader>
@@ -111,37 +106,20 @@ export default async function AuditResultPage({ params }: { params: { id: string
             </CardContent>
           </Card>
         )}
-
-        {/* FIX: Re-added the Image SEO card to use the 'imageIssues' variable */}
         <Card>
           <CardHeader>
             <CardTitle className="text-xl">Image SEO</CardTitle>
-            <CardDescription>
-              {imageIssues.length > 0
-                ? `Found ${imageIssues.length} image(s) missing alt text.`
-                : "All images seem to have alt text. Good job!"}
-            </CardDescription>
+            <CardDescription>{imageIssues.length > 0 ? `Found ${imageIssues.length} image(s) missing alt text.` : "All images seem to have alt text. Good job!"}</CardDescription>
           </CardHeader>
           {imageIssues.length > 0 && (
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Preview</TableHead>
-                    <TableHead className="w-[80%]">Image Source (URL)</TableHead>
-                    <TableHead>Issue</TableHead>
-                  </TableRow>
-                </TableHeader>
+              <Table><TableHeader><TableRow><TableHead>Preview</TableHead><TableHead className="w-[80%]">Image Source (URL)</TableHead><TableHead>Issue</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {imageIssues.map((issue) => (
                     <TableRow key={issue.id}>
-                      <TableCell>
-                        <img src={issue.src.startsWith('http') ? issue.src : new URL(issue.src, audit.url).href} alt="Missing Alt Text" className="h-10 w-10 object-cover rounded-md bg-muted" />
-                      </TableCell>
+                      <TableCell><img src={issue.src.startsWith('http') ? issue.src : new URL(issue.src, audit.url).href} alt="Missing Alt Text" className="h-10 w-10 object-cover rounded-md bg-muted" /></TableCell>
                       <TableCell className="break-all font-mono text-xs">{issue.src}</TableCell>
-                      <TableCell>
-                        <Badge variant="destructive">Missing Alt</Badge>
-                      </TableCell>
+                      <TableCell><Badge variant="destructive">Missing Alt</Badge></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -149,8 +127,6 @@ export default async function AuditResultPage({ params }: { params: { id: string
             </CardContent>
           )}
         </Card>
-
-        {/* Broken Links Card */}
         <Card>
             <CardHeader>
                 <CardTitle className="text-xl">Link Health</CardTitle>
