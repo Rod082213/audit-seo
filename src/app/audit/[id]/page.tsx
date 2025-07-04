@@ -18,8 +18,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { notFound } from "next/navigation";
-import { CheckCircle2, XCircle, AlertCircle } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
+// FIX: Removed 'AlertCircle' as it was unused
+import { CheckCircle2, XCircle } from "lucide-react"; 
+// FIX: Removed the entire 'Progress' import as it was unused
 
 // A small component for the score gauges
 const ScoreGauge = ({ score, title }: { score: number, title: string }) => {
