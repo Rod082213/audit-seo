@@ -56,22 +56,23 @@ const ScoreGauge = ({ score, title }: { score: number, title: string }) => {
   );
 };
 
-// FIX: Define a clear type for the page props
-type AuditResultPageProps = {
-  params: { id: string };
-};
 
-// FIX: Apply the new Props type to the function signature
-export default async function AuditResultPage({ params }: AuditResultPageProps) {
+// FIX: Removed the explicit type definition and let TypeScript infer it.
+export default async function AuditResultPage({ params }: { params: { id: string } }) {
   const audit = await getAuditById(params.id);
 
   if (!audit) {
     notFound();
   }
 
-  // NOTE: This destructuring will cause a new type error if you have already
-  // implemented the mobile/desktop tabs, as 'lighthouseReport' would be an array.
-  // The provided code assumes 'lighthouseReport' is a single object.
+  // This check is necessary to ensure `lighthouseReport` is not an array if you
+  // haven't updated your schema for mobile/desktop yet.
+  if (Array.isArray(audit.lighthouseReport)) {
+    // Handle the case where it's an array, or show an error/default state.
+    // For now, we'll just prevent the page from crashing.
+    return <div>Error: Unexpected report format.</div>;
+  }
+
   const { metaTagReport, lighthouseReport, imageIssues, linkIssues } = audit;
 
   return (
