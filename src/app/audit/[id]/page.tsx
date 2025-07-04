@@ -49,7 +49,6 @@ const LighthouseReportTab = ({ report }: { report: LighthouseReport }) => (
     </>
 )
 
-// This is the correct, standard way to type page props in Next.js
 export default async function AuditResultPage({ params }: { params: { id: string } }) {
   const audit = await getAuditById(params.id);
 
@@ -57,7 +56,6 @@ export default async function AuditResultPage({ params }: { params: { id: string
     notFound();
   }
 
-  // Correctly destructure the 'lighthouseReports' array
   const { metaTagReport, lighthouseReports, imageIssues, linkIssues } = audit;
 
   const mobileReport = lighthouseReports.find(r => r.formFactor === 'MOBILE');
@@ -113,6 +111,44 @@ export default async function AuditResultPage({ params }: { params: { id: string
             </CardContent>
           </Card>
         )}
+
+        {/* FIX: Re-added the Image SEO card to use the 'imageIssues' variable */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Image SEO</CardTitle>
+            <CardDescription>
+              {imageIssues.length > 0
+                ? `Found ${imageIssues.length} image(s) missing alt text.`
+                : "All images seem to have alt text. Good job!"}
+            </CardDescription>
+          </CardHeader>
+          {imageIssues.length > 0 && (
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Preview</TableHead>
+                    <TableHead className="w-[80%]">Image Source (URL)</TableHead>
+                    <TableHead>Issue</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {imageIssues.map((issue) => (
+                    <TableRow key={issue.id}>
+                      <TableCell>
+                        <img src={issue.src.startsWith('http') ? issue.src : new URL(issue.src, audit.url).href} alt="Missing Alt Text" className="h-10 w-10 object-cover rounded-md bg-muted" />
+                      </TableCell>
+                      <TableCell className="break-all font-mono text-xs">{issue.src}</TableCell>
+                      <TableCell>
+                        <Badge variant="destructive">Missing Alt</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          )}
+        </Card>
 
         {/* Broken Links Card */}
         <Card>
